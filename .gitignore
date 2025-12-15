@@ -57,5 +57,5 @@ dkms.conf
 *~
 .DS_Store
 Debug/
-Debug/
+Release/
 .settings
