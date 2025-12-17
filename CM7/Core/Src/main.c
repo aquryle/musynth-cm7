@@ -61,12 +61,13 @@ SAI_HandleTypeDef hsai_BlockA1;
 
 SPI_HandleTypeDef hspi1;
 
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim13;
 
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-
+uint32_t tim2OverflowCounter = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -79,12 +80,14 @@ static void MX_SAI1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM13_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
 int _write(int file, char *ptr, int len)
 {
 #if 1
@@ -99,15 +102,36 @@ int _write(int file, char *ptr, int len)
 #endif
 }
 
-void delay_ms(uint32_t t)
+
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	HAL_TIM_Base_Start(&htim13);
-	for (uint32_t i = 0; i < t; i++) {
-		__HAL_TIM_SET_COUNTER(&htim13, 0);				// counter set as 0
-		while (999 > __HAL_TIM_GET_COUNTER(&htim13));	// 1000clk wait
-	}
-	HAL_TIM_Base_Stop(&htim13);
+  if (htim->Instance == TIM2) {
+    tim2OverflowCounter++;
+  }
 }
+
+
+/**
+ * @brief	プログラム起動時を起点とした時間（us）を返す。
+ * @return	uint64_t
+ * @details	上位32bitは1us周期32bitタイマーのオーバーフローカウンタを使う
+ *          下位32bitはTIM2のカウンタを使う
+ *          58年くらいでオーバーフローする
+ */
+uint64_t Get_Tick(void)
+{
+    uint32_t ovf1, ovf2, cnt;
+
+    // 割り込み中の読み出し防止
+    do {
+        ovf1 = tim2OverflowCounter;
+        cnt  = __HAL_TIM_GET_COUNTER(&htim2);
+        ovf2 = tim2OverflowCounter;
+    } while (ovf1 != ovf2);
+
+    return (((uint64_t)ovf1 << 32) | cnt);
+  }
 
 /* USER CODE END 0 */
 
@@ -186,7 +210,15 @@ Error_Handler();
   MX_SPI1_Init();
   MX_USART1_UART_Init();
   MX_TIM13_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
+
+  // Tick用リソース初期化
+  __HAL_TIM_SET_COUNTER(&htim2, 0);
+  tim2OverflowCounter = 0;
+  HAL_TIM_Base_Start_IT(&htim2);
+
+  // アプリ起動
   app();
   /* USER CODE END 2 */
 
@@ -194,7 +226,8 @@ Error_Handler();
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  delay_ms(500);
+
+	  HAL_Delay(1000);
 	  HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
 	  printf("hello, from cm7\n");
     /* USER CODE END WHILE */
@@ -419,6 +452,51 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
 
   /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 199;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 4294967295;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
 
 }
 
